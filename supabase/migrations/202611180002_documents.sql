@@ -63,6 +63,8 @@ SET search_path = pg_catalog, public
 AS $$
 DECLARE
   actor uuid;
+  previous_correction_document text;
+  reservation_closed boolean;
 BEGIN
   SELECT ctx.usuario_id INTO actor
     FROM public.validar_contexto_actor() AS ctx
@@ -76,10 +78,23 @@ BEGIN
       documento_corto_id, folio_capturado, registrado_por
     ) VALUES (NEW.id, NEW.folio_fisico, actor);
   ELSIF NEW.folio_fisico_normalizado IS DISTINCT FROM OLD.folio_fisico_normalizado THEN
+    -- Autoriza únicamente la baja histórica asociada a esta corrección.
+    -- El valor es local a la transacción y se restaura al terminar.
+    previous_correction_document := current_setting('ca.folio_correction_document_id', true);
+    PERFORM set_config('ca.folio_correction_document_id', OLD.id::text, true);
+
     UPDATE public.folios_fisicos_reservados
        SET es_actual = false
      WHERE documento_corto_id = OLD.id AND es_actual;
-    IF NOT FOUND THEN
+
+    reservation_closed := FOUND;
+    PERFORM set_config(
+      'ca.folio_correction_document_id',
+      coalesce(previous_correction_document, ''),
+      true
+    );
+
+    IF NOT reservation_closed THEN
       RAISE EXCEPTION 'No existe una reserva vigente para el folio actual del documento %', OLD.id;
     END IF;
 

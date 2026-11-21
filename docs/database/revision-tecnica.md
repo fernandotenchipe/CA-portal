@@ -1,6 +1,6 @@
 # Revisión técnica — consolidación V4
 
-**Resultado:** propuesta revisada estáticamente, pero no validada en PostgreSQL ni lista para implementación. El motor PostgreSQL no estuvo disponible en este entorno, así que no se afirma que el SQL haya pasado pruebas de ejecución.
+**Resultado:** validación parcial en Supabase de desarrollo reportada por el usuario. La ejecución de las 68 pruebas obtuvo 61 aprobadas y 7 fallidas (47–53) en `validar_estado_trabajo()`. La corrección y el parche preparados en esta revisión aún no se han aplicado ni probado en PostgreSQL.
 
 ## Esquema inicial propuesto
 
@@ -107,9 +107,11 @@ El borrador `supabase/future_migrations/202611180007_billing_external_draft.sql`
 
 ## Validaciones ejecutadas
 
-- Revisión estática del orden `001_core`, `002_documents`, `003_fabrication`, `004_evidences`, `005_audit_notifications_reports`, `006_rls_baseline`; las referencias públicas apuntan a las 18 tablas declaradas en el conjunto.
+- Revisión estática del orden `001_core`, `002_documents`, `003_fabrication`, `004_evidences`, `005_audit_notifications_reports`, `006_rls_baseline`. Se encontró y corrigió en `005` la creación prematura de dos triggers de destinatarios de reportes, que apuntaban a una tabla declarada más adelante en el mismo archivo. Las demás referencias revisadas están ordenadas después de sus tablas/funciones dependientes.
 - Revisión de restricciones UNIQUE/FK/CHECK, triggers, grants/revokes, `SECURITY DEFINER`, RLS y posibles carreras.
 - Comprobación de que no hay `ON DELETE CASCADE`, policies no aprobadas ni archivos sensibles en estos cambios.
 - Escaneo estático de los archivos SQL/Markdown: sin marcadores de conflicto, espacios finales ni delimitadores de funciones desbalanceados. Se añadió suite pgTAP, no ejecutada.
-- No se encontró `psql`, `pg_format`, `sqlfluff`, instalación de PostgreSQL ni servicio local. Docker CLI está instalado, pero su motor no está activo; `docker desktop start` falló al intentar crear su log local y `docker info` no pudo conectarse al daemon.
-- Se preparó una suite pgTAP de 64 aserciones en `supabase/tests/database/v4_integrity.test.sql` y dos escenarios manuales de dos sesiones para carreras de folio/versionado. No se ejecutó ninguna migración ni prueba funcional. La suite queda sin probar en motor; toda la integridad, concurrencia, auditoría y seguridad aún requiere ejecución en PostgreSQL aislado.
+- En la revisión inicial no se encontró `psql` ni servicio PostgreSQL local. Después, el usuario confirmó que instaló/habilitó `psql`, conectó a Supabase de desarrollo y ejecutó la suite. Docker local no es necesario para el parche manual descrito en `guia-pruebas-local-supabase.md`.
+- El usuario ejecutó las 68 pruebas pgTAP en Supabase de desarrollo y reportó 61 aprobadas y 7 fallidas (47–53). Para la causa y la corrección preparada de `validar_estado_trabajo()`, véase `registro-cambios.md`. La suite conserva 68 asertos y todavía no se ha vuelto a ejecutar.
+- Se corrigió estáticamente la función en la migración original 005 para separar accesos de columnas por tabla y evitar comparar la columna generada `trabajos.importe` antes de calcularse. Se preparó un parche independiente para la base existente. No se aplicó remotamente.
+- Persisten pendientes la aplicación del parche en desarrollo, la repetición de pgTAP y las pruebas de concurrencia. No se declara completa la validación funcional de PostgreSQL.

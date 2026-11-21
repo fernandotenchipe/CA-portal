@@ -100,12 +100,26 @@ RETURNS trigger
 LANGUAGE plpgsql
 SET search_path = pg_catalog, public
 AS $$
+DECLARE
+  correction_document_id text;
 BEGIN
   IF TG_OP = 'DELETE' THEN
     RAISE EXCEPTION 'Las reservas de folios se conservan históricamente';
   END IF;
+
+  correction_document_id := nullif(
+    current_setting('ca.folio_correction_document_id', true), ''
+  );
+
   IF OLD.es_actual IS TRUE AND NEW.es_actual IS FALSE
-     AND (to_jsonb(NEW) - 'es_actual') IS NOT DISTINCT FROM (to_jsonb(OLD) - 'es_actual') THEN
+     AND correction_document_id = OLD.documento_corto_id::text
+     -- folio_normalizado es generada y NEW aún no está calculada en BEFORE.
+     -- Comparar explícitamente las columnas base evita esa diferencia falsa.
+     AND NEW.id IS NOT DISTINCT FROM OLD.id
+     AND NEW.documento_corto_id IS NOT DISTINCT FROM OLD.documento_corto_id
+     AND NEW.folio_capturado IS NOT DISTINCT FROM OLD.folio_capturado
+     AND NEW.registrado_por IS NOT DISTINCT FROM OLD.registrado_por
+     AND NEW.registrado_en IS NOT DISTINCT FROM OLD.registrado_en THEN
     RETURN NEW;
   END IF;
   RAISE EXCEPTION 'Una reserva de folio solo puede dejar de ser actual durante una corrección';
@@ -131,11 +145,13 @@ BEGIN
     FROM public.validar_contexto_actor() AS ctx;
 
   IF TG_TABLE_NAME = 'documentos_cortos' THEN
-    new_state := to_jsonb(NEW) ->> 'estado_trabajo';
-    IF TG_OP = 'UPDATE' THEN old_state := to_jsonb(OLD) ->> 'estado_trabajo'; END IF;
+    new_state := NEW.estado_trabajo;
+    IF TG_OP = 'UPDATE' THEN old_state := OLD.estado_trabajo; END IF;
+  ELSIF TG_TABLE_NAME = 'trabajos' OR TG_TABLE_NAME = 'ordenes_fabricacion' THEN
+    new_state := NEW.estado;
+    IF TG_OP = 'UPDATE' THEN old_state := OLD.estado; END IF;
   ELSE
-    new_state := to_jsonb(NEW) ->> 'estado';
-    IF TG_OP = 'UPDATE' THEN old_state := to_jsonb(OLD) ->> 'estado'; END IF;
+    RAISE EXCEPTION 'validar_estado_trabajo no admite la tabla %', TG_TABLE_NAME;
   END IF;
 
   IF TG_OP = 'INSERT' AND new_state = 'finalizado' THEN
@@ -144,28 +160,52 @@ BEGIN
 
   IF TG_OP = 'UPDATE' THEN
     IF old_state = 'finalizado' THEN
-      IF TG_TABLE_NAME NOT IN ('documentos_cortos', 'ordenes_fabricacion')
-         OR (to_jsonb(NEW) - ARRAY[
-           'folio_fisico', 'folio_fisico_normalizado', 'cancelado_por',
-           'cancelado_en', 'motivo_cancelacion', 'actualizado_en'
-         ]) IS DISTINCT FROM (to_jsonb(OLD) - ARRAY[
-           'folio_fisico', 'folio_fisico_normalizado', 'cancelado_por',
-           'cancelado_en', 'motivo_cancelacion', 'actualizado_en'
-         ]) THEN
+      IF TG_TABLE_NAME = 'trabajos' THEN
         RAISE EXCEPTION 'El registro finalizado es de consulta; use la operación excepcional autorizada';
+      ELSIF TG_TABLE_NAME = 'documentos_cortos' THEN
+        IF NEW.id IS DISTINCT FROM OLD.id
+           OR NEW.unidad_id IS DISTINCT FROM OLD.unidad_id
+           OR NEW.estado_trabajo IS DISTINCT FROM OLD.estado_trabajo
+           OR NEW.finalizado_por IS DISTINCT FROM OLD.finalizado_por
+           OR NEW.finalizado_en IS DISTINCT FROM OLD.finalizado_en
+           OR NEW.observaciones IS DISTINCT FROM OLD.observaciones
+           OR NEW.fecha_documento IS DISTINCT FROM OLD.fecha_documento
+           OR NEW.creado_por IS DISTINCT FROM OLD.creado_por
+           OR NEW.creado_en IS DISTINCT FROM OLD.creado_en THEN
+          RAISE EXCEPTION 'El registro finalizado es de consulta; use la operación excepcional autorizada';
+        END IF;
+      ELSIF TG_TABLE_NAME = 'ordenes_fabricacion' THEN
+        IF NEW.id IS DISTINCT FROM OLD.id
+           OR NEW.documento_corto_id IS DISTINCT FROM OLD.documento_corto_id
+           OR NEW.folio_digital IS DISTINCT FROM OLD.folio_digital
+           OR NEW.estado IS DISTINCT FROM OLD.estado
+           OR NEW.finalizado_por IS DISTINCT FROM OLD.finalizado_por
+           OR NEW.finalizado_en IS DISTINCT FROM OLD.finalizado_en
+           OR NEW.fecha_estimada_inicio IS DISTINCT FROM OLD.fecha_estimada_inicio
+           OR NEW.fecha_estimada_entrega IS DISTINCT FROM OLD.fecha_estimada_entrega
+           OR NEW.fecha_inicio_real IS DISTINCT FROM OLD.fecha_inicio_real
+           OR NEW.fecha_entrega_real IS DISTINCT FROM OLD.fecha_entrega_real
+           OR NEW.creado_por IS DISTINCT FROM OLD.creado_por
+           OR NEW.creado_en IS DISTINCT FROM OLD.creado_en THEN
+          RAISE EXCEPTION 'El registro finalizado es de consulta; use la operación excepcional autorizada';
+        END IF;
       END IF;
     END IF;
+
     IF TG_TABLE_NAME = 'documentos_cortos' THEN
       document_id := NEW.id;
-      IF OLD.cancelado_en IS NOT NULL
-         AND (to_jsonb(NEW) - ARRAY[
-           'folio_fisico', 'folio_fisico_normalizado', 'cancelado_por',
-           'cancelado_en', 'motivo_cancelacion', 'actualizado_en'
-         ]) IS DISTINCT FROM (to_jsonb(OLD) - ARRAY[
-           'folio_fisico', 'folio_fisico_normalizado', 'cancelado_por',
-           'cancelado_en', 'motivo_cancelacion', 'actualizado_en'
-         ]) THEN
-        RAISE EXCEPTION 'Una hoja cancelada solo admite corregir folio o cambiar su cancelación';
+      IF OLD.cancelado_en IS NOT NULL THEN
+        IF NEW.id IS DISTINCT FROM OLD.id
+           OR NEW.unidad_id IS DISTINCT FROM OLD.unidad_id
+           OR NEW.estado_trabajo IS DISTINCT FROM OLD.estado_trabajo
+           OR NEW.finalizado_por IS DISTINCT FROM OLD.finalizado_por
+           OR NEW.finalizado_en IS DISTINCT FROM OLD.finalizado_en
+           OR NEW.observaciones IS DISTINCT FROM OLD.observaciones
+           OR NEW.fecha_documento IS DISTINCT FROM OLD.fecha_documento
+           OR NEW.creado_por IS DISTINCT FROM OLD.creado_por
+           OR NEW.creado_en IS DISTINCT FROM OLD.creado_en THEN
+          RAISE EXCEPTION 'Una hoja cancelada solo admite corregir folio o cambiar su cancelación';
+        END IF;
       END IF;
       IF NEW.cancelado_en IS NOT DISTINCT FROM OLD.cancelado_en
          AND NEW.cancelado_por IS DISTINCT FROM OLD.cancelado_por THEN
@@ -184,13 +224,21 @@ BEGIN
       END IF;
     ELSIF TG_TABLE_NAME = 'ordenes_fabricacion' THEN
       document_id := NEW.documento_corto_id;
-      IF OLD.cancelado_en IS NOT NULL
-         AND (to_jsonb(NEW) - ARRAY[
-           'cancelado_por', 'cancelado_en', 'motivo_cancelacion', 'actualizado_en'
-         ]) IS DISTINCT FROM (to_jsonb(OLD) - ARRAY[
-           'cancelado_por', 'cancelado_en', 'motivo_cancelacion', 'actualizado_en'
-         ]) THEN
-        RAISE EXCEPTION 'Una orden cancelada solo admite cambiar su condición de cancelación';
+      IF OLD.cancelado_en IS NOT NULL THEN
+        IF NEW.id IS DISTINCT FROM OLD.id
+           OR NEW.documento_corto_id IS DISTINCT FROM OLD.documento_corto_id
+           OR NEW.folio_digital IS DISTINCT FROM OLD.folio_digital
+           OR NEW.estado IS DISTINCT FROM OLD.estado
+           OR NEW.finalizado_por IS DISTINCT FROM OLD.finalizado_por
+           OR NEW.finalizado_en IS DISTINCT FROM OLD.finalizado_en
+           OR NEW.fecha_estimada_inicio IS DISTINCT FROM OLD.fecha_estimada_inicio
+           OR NEW.fecha_estimada_entrega IS DISTINCT FROM OLD.fecha_estimada_entrega
+           OR NEW.fecha_inicio_real IS DISTINCT FROM OLD.fecha_inicio_real
+           OR NEW.fecha_entrega_real IS DISTINCT FROM OLD.fecha_entrega_real
+           OR NEW.creado_por IS DISTINCT FROM OLD.creado_por
+           OR NEW.creado_en IS DISTINCT FROM OLD.creado_en THEN
+          RAISE EXCEPTION 'Una orden cancelada solo admite cambiar su condición de cancelación';
+        END IF;
       END IF;
       IF NEW.cancelado_en IS NOT DISTINCT FROM OLD.cancelado_en
          AND NEW.cancelado_por IS DISTINCT FROM OLD.cancelado_por THEN
@@ -223,15 +271,38 @@ BEGIN
            OR actor_kind <> 'usuario' THEN
           RAISE EXCEPTION 'Bajo una hoja finalizada solo se permite finalizar un hijo pendiente';
         END IF;
-        IF TG_TABLE_NAME = 'trabajos' AND OLD.eliminado_en IS NOT NULL THEN
-          RAISE EXCEPTION 'No se puede finalizar un trabajo eliminado lógicamente';
-        END IF;
-        IF (to_jsonb(NEW) - ARRAY[
-              'estado', 'finalizado_por', 'finalizado_en', 'actualizado_en'
-            ]) IS DISTINCT FROM (to_jsonb(OLD) - ARRAY[
-              'estado', 'finalizado_por', 'finalizado_en', 'actualizado_en'
-            ]) THEN
-          RAISE EXCEPTION 'Bajo una hoja finalizada no se modifican datos del hijo';
+        IF TG_TABLE_NAME = 'trabajos' THEN
+          IF OLD.eliminado_en IS NOT NULL THEN
+            RAISE EXCEPTION 'No se puede finalizar un trabajo eliminado lógicamente';
+          END IF;
+          IF NEW.id IS DISTINCT FROM OLD.id
+             OR NEW.documento_corto_id IS DISTINCT FROM OLD.documento_corto_id
+             OR NEW.numero_orden IS DISTINCT FROM OLD.numero_orden
+             OR NEW.descripcion IS DISTINCT FROM OLD.descripcion
+             OR NEW.cantidad IS DISTINCT FROM OLD.cantidad
+             OR NEW.unidad_medida IS DISTINCT FROM OLD.unidad_medida
+             OR NEW.precio_unitario IS DISTINCT FROM OLD.precio_unitario
+             OR NEW.observaciones IS DISTINCT FROM OLD.observaciones
+             OR NEW.eliminado_en IS DISTINCT FROM OLD.eliminado_en
+             OR NEW.eliminado_por IS DISTINCT FROM OLD.eliminado_por
+             OR NEW.creado_en IS DISTINCT FROM OLD.creado_en THEN
+            RAISE EXCEPTION 'Bajo una hoja finalizada no se modifican datos del hijo';
+          END IF;
+        ELSIF TG_TABLE_NAME = 'ordenes_fabricacion' THEN
+          IF NEW.id IS DISTINCT FROM OLD.id
+             OR NEW.documento_corto_id IS DISTINCT FROM OLD.documento_corto_id
+             OR NEW.folio_digital IS DISTINCT FROM OLD.folio_digital
+             OR NEW.cancelado_por IS DISTINCT FROM OLD.cancelado_por
+             OR NEW.cancelado_en IS DISTINCT FROM OLD.cancelado_en
+             OR NEW.motivo_cancelacion IS DISTINCT FROM OLD.motivo_cancelacion
+             OR NEW.fecha_estimada_inicio IS DISTINCT FROM OLD.fecha_estimada_inicio
+             OR NEW.fecha_estimada_entrega IS DISTINCT FROM OLD.fecha_estimada_entrega
+             OR NEW.fecha_inicio_real IS DISTINCT FROM OLD.fecha_inicio_real
+             OR NEW.fecha_entrega_real IS DISTINCT FROM OLD.fecha_entrega_real
+             OR NEW.creado_por IS DISTINCT FROM OLD.creado_por
+             OR NEW.creado_en IS DISTINCT FROM OLD.creado_en THEN
+            RAISE EXCEPTION 'Bajo una hoja finalizada no se modifican datos del hijo';
+          END IF;
         END IF;
       END IF;
     END IF;
@@ -244,8 +315,10 @@ BEGIN
         IF NEW.cancelado_en IS NOT NULL THEN
           RAISE EXCEPTION 'No se puede finalizar una hoja cancelada';
         END IF;
-      ELSIF TG_TABLE_NAME = 'ordenes_fabricacion' AND NEW.cancelado_en IS NOT NULL THEN
-        RAISE EXCEPTION 'No se puede finalizar una orden cancelada';
+      ELSIF TG_TABLE_NAME = 'ordenes_fabricacion' THEN
+        IF NEW.cancelado_en IS NOT NULL THEN
+          RAISE EXCEPTION 'No se puede finalizar una orden cancelada';
+        END IF;
       END IF;
       NEW.finalizado_por := actor_user;
       NEW.finalizado_en := clock_timestamp();
@@ -484,10 +557,6 @@ BEGIN
 END;
 $$;
 
-CREATE TRIGGER reportes_destinatarios_validar
-  BEFORE INSERT OR UPDATE OF usuario_id ON public.reportes_diarios_destinatarios
-  FOR EACH ROW EXECUTE FUNCTION public.validar_destinatario_reporte();
-
 CREATE OR REPLACE FUNCTION public.proteger_resultado_destinatario_reporte()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -511,10 +580,6 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
-CREATE TRIGGER reportes_destinatario_resultado_proteger
-  BEFORE INSERT OR UPDATE ON public.reportes_diarios_destinatarios
-  FOR EACH ROW EXECUTE FUNCTION public.proteger_resultado_destinatario_reporte();
 
 CREATE OR REPLACE FUNCTION public.validar_designacion_reporte_diario()
 RETURNS trigger
@@ -658,6 +723,15 @@ CREATE INDEX reportes_destinatarios_estado_idx
   ON public.reportes_diarios_destinatarios (estado, reporte_diario_id);
 CREATE INDEX reportes_destinatarios_usuario_idx
   ON public.reportes_diarios_destinatarios (usuario_id);
+
+-- Estos triggers dependen de la tabla de destinatarios creada justo arriba.
+CREATE TRIGGER reportes_destinatarios_validar
+  BEFORE INSERT OR UPDATE OF usuario_id ON public.reportes_diarios_destinatarios
+  FOR EACH ROW EXECUTE FUNCTION public.validar_destinatario_reporte();
+
+CREATE TRIGGER reportes_destinatario_resultado_proteger
+  BEFORE INSERT OR UPDATE ON public.reportes_diarios_destinatarios
+  FOR EACH ROW EXECUTE FUNCTION public.proteger_resultado_destinatario_reporte();
 
 CREATE TRIGGER auditoria_no_update_delete
   BEFORE UPDATE OR DELETE ON public.auditoria

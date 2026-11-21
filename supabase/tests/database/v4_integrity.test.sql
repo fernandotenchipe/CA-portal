@@ -1,8 +1,65 @@
 BEGIN;
+SET LOCAL search_path = extensions, public, auth, pg_catalog;
 SELECT no_plan();
 
--- Fixtures Auth solo locales. Los perfiles iniciales se crean con actor sistema,
--- igual que el procedimiento documentado para bootstrap de la primera cuenta.
+-- El bootstrap positivo solo es válido cuando todavía no hay perfiles. En un
+-- proyecto de desarrollo ya inicializado se prueba el rechazo del bootstrap y
+-- se crea el perfil de prueba como actor sistema dentro de esta transacción.
+CREATE TEMP TABLE ca_v4_bootstrap_state ON COMMIT DROP AS
+SELECT EXISTS (SELECT 1 FROM public.usuarios) AS perfiles_existentes;
+
+-- Los fixtures usan UUID/folios conocidos. Abortar antes de cualquier INSERT
+-- si una ejecución previa/manual u otro uso ya ocupa alguno de ellos.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM auth.users
+    WHERE id IN (
+      '10000000-0000-0000-0000-000000000001',
+      '10000000-0000-0000-0000-000000000002'
+    )
+    OR lower(email) IN ('ca-v4-admin@example.invalid', 'ca-v4-worker@example.invalid')
+  ) OR EXISTS (
+    SELECT 1 FROM public.usuarios
+    WHERE id IN (
+      '10000000-0000-0000-0000-000000000001',
+      '10000000-0000-0000-0000-000000000002'
+    )
+  ) OR EXISTS (
+    SELECT 1 FROM public.clientes
+    WHERE id = '20000000-0000-0000-0000-000000000001'
+       OR correo = 'cliente-test@example.invalid'
+  ) OR EXISTS (
+    SELECT 1 FROM public.unidades
+    WHERE id BETWEEN '30000000-0000-0000-0000-000000000001'::uuid
+                 AND '30000000-0000-0000-0000-000000000004'::uuid
+       OR numero_serie = 'SERIE123'
+  ) OR EXISTS (
+    SELECT 1 FROM public.documentos_cortos
+    WHERE id BETWEEN '40000000-0000-0000-0000-000000000001'::uuid
+                 AND '40000000-0000-0000-0000-000000000006'::uuid
+       OR folio_fisico_normalizado IN (
+         'FOLIO-NO-CLIENTE', 'AB-001', 'AB001', 'XY-009', 'FAB-001', 'EVID-001'
+       )
+  ) OR EXISTS (
+    SELECT 1 FROM public.folios_fisicos_reservados
+    WHERE folio_normalizado IN (
+      'FOLIO-NO-CLIENTE', 'AB-001', 'AB001', 'XY-009', 'FAB-001', 'EVID-001'
+    )
+  ) OR EXISTS (
+    SELECT 1 FROM public.trabajos WHERE id = '50000000-0000-0000-0000-000000000001'
+  ) OR EXISTS (
+    SELECT 1 FROM public.ordenes_fabricacion WHERE id = '60000000-0000-0000-0000-000000000001'
+  ) OR EXISTS (
+    SELECT 1 FROM public.evidencias WHERE id = '70000000-0000-0000-0000-000000000001'
+  ) THEN
+    RAISE EXCEPTION 'Fixture UUID, correo, serie o folio ya existe; no se ejecutaron escrituras de prueba';
+  END IF;
+END;
+$$;
+
+-- Fixtures Auth temporales. Todo el archivo queda dentro de la transacción
+-- revertida al final; no se usa ON CONFLICT para ocultar colisiones.
 INSERT INTO auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
   raw_app_meta_data, raw_user_meta_data, created_at, updated_at
@@ -10,19 +67,36 @@ INSERT INTO auth.users (
   ('10000000-0000-0000-0000-000000000001', 'authenticated', 'authenticated',
    'ca-v4-admin@example.invalid', '', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now()),
   ('10000000-0000-0000-0000-000000000002', 'authenticated', 'authenticated',
-   'ca-v4-worker@example.invalid', '', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now())
-ON CONFLICT (id) DO NOTHING;
+   'ca-v4-worker@example.invalid', '', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now());
 
-SELECT lives_ok($sql$
-  SELECT public.bootstrap_first_admin(
-    '10000000-0000-0000-0000-000000000001', 'CA V4 Admin Test', true)
-$sql$, 'el propietario inicializa un primer perfil de Administración');
+SELECT CASE
+  WHEN NOT (SELECT perfiles_existentes FROM pg_temp.ca_v4_bootstrap_state)
+  THEN lives_ok($sql$
+    SELECT public.bootstrap_first_admin(
+      '10000000-0000-0000-0000-000000000001', 'CA V4 Admin Test', true)
+  $sql$, 'el propietario inicializa un primer perfil de Administración')
+  ELSE throws_ok($sql$
+    SELECT public.bootstrap_first_admin(
+      '10000000-0000-0000-0000-000000000001', 'CA V4 Admin Test', true)
+  $sql$, 'P0001', 'El bootstrap solo se permite cuando todavía no hay perfiles',
+    'el bootstrap se rechaza en una base que ya tiene perfiles')
+END;
+
+-- Si la base ya tenía perfiles, evita depender del bootstrap de un solo uso.
+-- El trigger registra esta fixture como sistema; el ROLLBACK elimina la fila.
+SET LOCAL app.actor_tipo = 'sistema';
+SET LOCAL app.actor_id = '';
+INSERT INTO public.usuarios (id, rol_id, nombre, activo, recibe_reporte_diario)
+SELECT '10000000-0000-0000-0000-000000000001', r.id, 'CA V4 Admin Test', true, true
+  FROM public.roles r
+ WHERE r.codigo = 'ADMINISTRACION'
+   AND (SELECT perfiles_existentes FROM pg_temp.ca_v4_bootstrap_state);
+
 SET LOCAL app.actor_tipo = 'usuario';
 SET LOCAL app.actor_id = '10000000-0000-0000-0000-000000000001';
 INSERT INTO public.usuarios (id, rol_id, nombre, activo, recibe_reporte_diario)
 SELECT '10000000-0000-0000-0000-000000000002', r.id, 'CA V4 Worker Test', true, false
-  FROM public.roles r WHERE r.codigo = 'VENTAS'
-ON CONFLICT (id) DO NOTHING;
+  FROM public.roles r WHERE r.codigo = 'VENTAS';
 
 SET LOCAL app.actor_tipo = 'usuario';
 SET LOCAL app.actor_id = '10000000-0000-0000-0000-000000000002';
@@ -47,6 +121,21 @@ SELECT ok((SELECT count(*) = 18 FROM pg_class c
     'versiones_fabricacion','impresiones','evidencias','auditoria','notificaciones',
     'notificacion_usuarios','reportes_diarios','reportes_diarios_destinatarios'
   ]) AND c.relrowsecurity), 'RLS está habilitado en las 18 tablas');
+
+SELECT ok(EXISTS (
+  SELECT 1 FROM pg_trigger t
+  WHERE t.tgrelid = 'public.reportes_diarios_destinatarios'::regclass
+    AND t.tgname = 'reportes_destinatarios_validar'
+    AND t.tgfoid = 'public.validar_destinatario_reporte()'::regprocedure
+    AND t.tgenabled = 'O' AND NOT t.tgisinternal
+), 'el trigger de validación de destinatarios existe y está habilitado');
+SELECT ok(EXISTS (
+  SELECT 1 FROM pg_trigger t
+  WHERE t.tgrelid = 'public.reportes_diarios_destinatarios'::regclass
+    AND t.tgname = 'reportes_destinatario_resultado_proteger'
+    AND t.tgfoid = 'public.proteger_resultado_destinatario_reporte()'::regprocedure
+    AND t.tgenabled = 'O' AND NOT t.tgisinternal
+), 'el trigger de protección de resultado existe y está habilitado');
 
 SELECT ok(NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public'),
   'no hay políticas RLS públicas que abran acceso directo');
@@ -93,7 +182,7 @@ SELECT ok(EXISTS (SELECT 1 FROM public.auditoria
   WHERE entidad = 'public.usuarios'
     AND entidad_id = '10000000-0000-0000-0000-000000000001'
     AND tipo_actor = 'sistema' AND usuario_id IS NULL),
-  'el bootstrap del primer administrador queda auditado como sistema');
+  'la fixture de Administración queda auditada como sistema');
 
 SELECT ok(EXISTS (SELECT 1 FROM pg_constraint
   WHERE conrelid = 'public.unidades'::regclass AND contype = 'f'
@@ -136,7 +225,7 @@ $sql$, '23514', NULL, 'rechaza serie con espacios');
 SELECT throws_ok($sql$
   INSERT INTO public.documentos_cortos (id, folio_fisico, unidad_id)
   VALUES ('40000000-0000-0000-0000-000000000001', 'FOLIO-NO-CLIENTE',
-    '30000000-0000-0000-0000-000000000001')
+    '30000000-0000-0000-0000-000000000099')
 $sql$, '23503', NULL, 'rechaza hoja cuya unidad no existe');
 
 INSERT INTO public.documentos_cortos (id, folio_fisico, unidad_id)
@@ -152,8 +241,10 @@ SELECT throws_ok($sql$
     '30000000-0000-0000-0000-000000000001')
 $sql$, '23505', NULL, 'mayúsculas y espacios no distinguen un folio ya usado');
 
-UPDATE public.documentos_cortos SET folio_fisico = 'XY-009'
-WHERE id = '40000000-0000-0000-0000-000000000001';
+SELECT lives_ok($sql$
+  UPDATE public.documentos_cortos SET folio_fisico = 'XY-009'
+  WHERE id = '40000000-0000-0000-0000-000000000001'
+$sql$, 'una corrección legítima actualiza el folio y conserva su reserva histórica');
 SELECT is((SELECT count(*)::integer FROM public.folios_fisicos_reservados
   WHERE documento_corto_id = '40000000-0000-0000-0000-000000000001'),
   2, 'la corrección conserva ambas reservas');
@@ -165,6 +256,12 @@ SELECT ok(EXISTS (SELECT 1 FROM public.folios_fisicos_reservados
   WHERE documento_corto_id = '40000000-0000-0000-0000-000000000001'
     AND folio_normalizado = 'XY-009' AND es_actual),
   'el folio corregido queda como reserva actual');
+SELECT throws_ok($sql$
+  UPDATE public.folios_fisicos_reservados SET es_actual = false
+  WHERE documento_corto_id = '40000000-0000-0000-0000-000000000001'
+    AND es_actual
+$sql$, 'P0001', 'Una reserva de folio solo puede dejar de ser actual durante una corrección',
+  'no se puede desactivar directamente la reserva vigente');
 SELECT throws_ok($sql$
   INSERT INTO public.documentos_cortos (id, folio_fisico, unidad_id)
   VALUES ('40000000-0000-0000-0000-000000000004', 'AB-001',
