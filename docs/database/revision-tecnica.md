@@ -64,13 +64,13 @@ El backend es el único componente que recibirá la clave `service_role` o crede
 
 Para cada petición, el backend debe:
 
-1. Verificar criptográficamente el access token con Supabase Auth/JWKS y obtener el `sub` validado; nunca aceptar `usuario_id`, rol o permiso desde el body o headers arbitrarios.
-2. Cargar `public.usuarios` por ese `sub`, rechazar perfiles inexistentes/inactivos y resolver rol y `rol_permisos` desde PostgreSQL. Denegar por defecto si no existe el permiso exacto del módulo/operación.
-3. Aplicar una comprobación de autorización en cada lectura y mutación. Para auditoría detallada, exigir además `auditoria.consultar` y que el usuario pertenezca a `ADMINISTRACION`; las notificaciones solo entregan sus resúmenes autorizados.
-4. En mutaciones auditadas, abrir una transacción y configurar `app.actor_tipo='usuario'` y `app.actor_id=<sub validado>` con `SET LOCAL`/`set_config(..., true)` antes de ejecutar SQL parametrizado. Hacer commit solo si termina toda la mutación; usar rollback ante error. Esto mantiene el contexto aislado por transacción en un pool.
+1. `backend/` verifica el access token con `supabase.auth.getClaims`, comprueba `iss`, `aud`, tiempos y `sub`, y obtiene el sujeto verificado; nunca acepta `usuario_id`, rol o permiso desde el body o headers alternos.
+2. `backend/` carga `public.usuarios` por ese `sub`, rechaza perfiles/roles inactivos y resuelve `rol_permisos` desde PostgreSQL. `hasPermission` deniega por defecto si no existe el permiso exacto del módulo/operación.
+3. Las únicas rutas actuales son `GET /api/auth/me` y `GET /api/auth/check`. No existe ruta de auditoría ni de negocio; la autorización de `auditoria.consultar` exige además `ADMINISTRACION`.
+4. `withActorTransaction` prepara la transacción, fija `app.actor_tipo='usuario'` y `app.actor_id=<sub validado>` con `set_config(..., true)`, hace commit/rollback y devuelve la conexión al pool de forma segura. Ninguna operación de negocio lo invoca todavía.
 5. Mantener tokens Supabase, `service_role` y contraseña PostgreSQL solo en secretos del VPS; rotarlos si se exponen y restringir red/egress de la base al backend y herramientas administrativas.
 
-RLS habilitado sin policies y los `REVOKE` bloquean el Data API para `anon`/`authenticated`; `service_role` deliberadamente omite RLS y puede leer/escribir la mayoría de tablas. Es una identidad técnica privilegiada, no una identidad de trabajador. Las funciones RPC concedidas a `service_role` tampoco sustituyen el chequeo de permisos del API. El starter actual en `backend/` no tiene Auth middleware, conexión a DB ni autorización: esta sección es el diseño requerido, no una implementación ya activa.
+RLS habilitado sin policies y los `REVOKE` bloquean el Data API para `anon`/`authenticated`; `service_role` deliberadamente omite RLS y puede leer/escribir la mayoría de tablas. Es una identidad técnica privilegiada, no una identidad de trabajador. Las funciones RPC concedidas a `service_role` tampoco sustituyen el chequeo de permisos del API. Esta implementación protege solamente los endpoints de identidad; las rutas futuras deben invocar autorización antes de cada lectura o mutación.
 
 ### Bootstrap de la primera cuenta de Administración
 

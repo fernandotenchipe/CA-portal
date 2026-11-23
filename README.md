@@ -28,7 +28,7 @@ npm start
 
 ## Alcance de esta base
 
-La interfaz raíz solo confirma que Next.js inicia y aún no consume APIs. El backend separado en `backend/` cuenta con su conexión PostgreSQL preparada y una comprobación `SELECT 1`; todavía no tiene autenticación, permisos, endpoints de negocio, almacenamiento ni operaciones del sistema. Consulta [la guía de conexión del backend](docs/backend/conexion-postgresql.md).
+La interfaz raíz solo confirma que Next.js inicia y aún no consume APIs. El backend separado en `backend/` cuenta con conexión PostgreSQL, verificación Supabase Auth, resolución de perfiles/permisos y endpoints de diagnóstico; todavía no tiene rutas de negocio, almacenamiento ni operaciones del sistema. Consulta las guías de [conexión PostgreSQL](docs/backend/conexion-postgresql.md) y [autenticación y permisos](docs/backend/autenticacion-y-permisos.md).
 
 El prototipo HTML original se conserva sin cambios en `referencias/mockup-registro.html`; es una referencia visual y no forma parte de la aplicación.
 

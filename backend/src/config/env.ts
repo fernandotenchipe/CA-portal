@@ -8,6 +8,9 @@ export const env = {
   port: parsedPort,
   databaseUrl: process.env.DATABASE_URL,
   databaseSslCaPath: process.env.DATABASE_SSL_CA_PATH,
+  supabaseUrl: process.env.SUPABASE_URL,
+  supabasePublishableKey: process.env.SUPABASE_PUBLISHABLE_KEY,
+  supabaseJwtAudience: process.env.SUPABASE_JWT_AUDIENCE || "authenticated",
   databasePoolMax: Number(process.env.DATABASE_POOL_MAX ?? 5),
   databaseConnectionTimeoutMs: Number(process.env.DATABASE_CONNECTION_TIMEOUT_MS ?? 10_000),
 };
