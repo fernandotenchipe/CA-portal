@@ -9,6 +9,10 @@ coverage/
 # Local environment files; keep only the safe template
 .env*
 !.env.example
+backend/certs/
+*.crt
+*.pem
+*.cer
 
 # Deployment and tooling
 .vercel/

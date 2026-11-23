@@ -28,10 +28,10 @@ npm start
 
 ## Alcance de esta base
 
-La ruta raíz solo confirma que la aplicación inicia. Aún no hay módulos, endpoints, formularios, base de datos, autenticación, permisos, almacenamiento ni conexión con Supabase.
+La interfaz raíz solo confirma que Next.js inicia y aún no consume APIs. El backend separado en `backend/` cuenta con su conexión PostgreSQL preparada y una comprobación `SELECT 1`; todavía no tiene autenticación, permisos, endpoints de negocio, almacenamiento ni operaciones del sistema. Consulta [la guía de conexión del backend](docs/backend/conexion-postgresql.md).
 
 El prototipo HTML original se conserva sin cambios en `referencias/mockup-registro.html`; es una referencia visual y no forma parte de la aplicación.
 
 ## Variables locales futuras
 
-`.env.example` es una plantilla sin credenciales. Cuando se configure Supabase, crea `.env.local` a partir de ella y nunca guardes ese archivo en Git; `.gitignore` ya lo excluye.
+Las plantillas `.env.example` no contienen credenciales. Para PostgreSQL, copia `backend/.env.example` a `backend/.env` y configura allí el connection string privado; `.gitignore` excluye los archivos `.env`.
