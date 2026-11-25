@@ -5,20 +5,26 @@ import { businessPermissions, hasPermission } from "./middleware/authorization.j
 import { AuthService } from "./services/auth-service.js";
 import { ClientesModule } from "./modules/clientes/index.js";
 import { UnidadesModule } from "./modules/unidades/index.js";
+import { DocumentosModule } from "./modules/documentos/index.js";
+import { TrabajosModule } from "./modules/documentos/trabajos.js";
 import type { AuthServiceContract, AuthenticatedUser } from "./types/auth.js";
-import type { ClienteModuleContract, UnidadModuleContract } from "./types/business.js";
-import { normalizeNumeroSerie, parseListQuery, validateUuid } from "./validations/index.js";
+import type { ClienteModuleContract, DocumentoModuleContract, TrabajoModuleContract, UnidadModuleContract } from "./types/business.js";
+import { normalizeNumeroSerie, parseDocumentoListQuery, parseListQuery, validateUuid } from "./validations/index.js";
 
 const maxBodyBytes = 32 * 1024;
 
 interface AppDependencies {
   clientes?: ClienteModuleContract;
   unidades?: UnidadModuleContract;
+  documentos?: DocumentoModuleContract;
+  trabajos?: TrabajoModuleContract;
 }
 
 type BusinessRoute =
   | { resource: "clientes"; action: "list" | "get" | "create" | "update"; id?: string; permission: string }
-  | { resource: "unidades"; action: "list" | "get" | "create" | "update"; id?: string; clientId?: string; permission: string };
+  | { resource: "unidades"; action: "list" | "get" | "create" | "update"; id?: string; clientId?: string; permission: string }
+  | { resource: "documentos_cortos"; action: "list" | "get" | "create" | "update" | "finalize"; id?: string; permission: string }
+  | { resource: "trabajos"; action: "list" | "create" | "update" | "finalize"; id?: string; documentId?: string; permission: string };
 
 function sendJson(response: ServerResponse, status: number, body: unknown): void {
   response.writeHead(status, {
@@ -61,6 +67,27 @@ function resolveBusinessRoute(segments: string[], method: string): BusinessRoute
     if (segments.length === 3 && verb === "GET") return { resource, action: "get", id, permission: businessPermissions.unidades.consultar };
     if (segments.length === 3 && verb === "PATCH") return { resource, action: "update", id, permission: businessPermissions.unidades.editar };
     if (segments.length === 2 || segments.length === 3) {
+      throw new HttpError(405, "Método no permitido.", "method_not_allowed");
+    }
+  }
+
+  if (resource === "documentos-cortos") {
+    if (segments.length === 2 && verb === "GET") return { resource: "documentos_cortos", action: "list", permission: businessPermissions.documentosCortos.consultar };
+    if (segments.length === 2 && verb === "POST") return { resource: "documentos_cortos", action: "create", permission: businessPermissions.documentosCortos.crear };
+    if (segments.length === 3 && verb === "GET") return { resource: "documentos_cortos", action: "get", id, permission: businessPermissions.documentosCortos.consultar };
+    if (segments.length === 3 && verb === "PATCH") return { resource: "documentos_cortos", action: "update", id, permission: businessPermissions.documentosCortos.editar };
+    if (segments.length === 4 && nested === "finalizar" && verb === "POST") return { resource: "documentos_cortos", action: "finalize", id, permission: businessPermissions.documentosCortos.editar };
+    if (segments.length === 4 && nested === "trabajos" && verb === "GET") return { resource: "trabajos", action: "list", documentId: id, permission: businessPermissions.trabajos.consultar };
+    if (segments.length === 4 && nested === "trabajos" && verb === "POST") return { resource: "trabajos", action: "create", documentId: id, permission: businessPermissions.trabajos.crear };
+    if (segments.length === 2 || segments.length === 3 || (segments.length === 4 && ["finalizar", "trabajos"].includes(nested ?? ""))) {
+      throw new HttpError(405, "Método no permitido.", "method_not_allowed");
+    }
+  }
+
+  if (resource === "trabajos") {
+    if (segments.length === 3 && verb === "PATCH") return { resource: "trabajos", action: "update", id, permission: businessPermissions.trabajos.editar };
+    if (segments.length === 4 && nested === "finalizar" && verb === "POST") return { resource: "trabajos", action: "finalize", id, permission: businessPermissions.trabajos.editar };
+    if (segments.length === 3 || (segments.length === 4 && nested === "finalizar")) {
       throw new HttpError(405, "Método no permitido.", "method_not_allowed");
     }
   }
@@ -111,9 +138,56 @@ async function dispatchBusinessRoute(
   user: AuthenticatedUser,
   clientes: ClienteModuleContract,
   unidades: UnidadModuleContract,
+  documentos: DocumentoModuleContract,
+  trabajos: TrabajoModuleContract,
 ): Promise<void> {
   if (!hasPermission(user, route.permission)) {
     sendJson(response, 403, { error: "No tienes permiso para realizar esta operación.", code: "permission_denied" });
+    return;
+  }
+
+  if (route.resource === "documentos_cortos") {
+    if (route.action === "list") {
+      sendJson(response, 200, await documentos.list(parseDocumentoListQuery(url.searchParams)));
+      return;
+    }
+    if (route.action === "create") {
+      sendJson(response, 201, { data: await documentos.create(await readJsonBody(request), user) });
+      return;
+    }
+    const id = validateUuid(route.id ?? "", "documento_corto_id");
+    if (route.action === "get") {
+      const result = await documentos.getById(id);
+      if (!result) throw new HttpError(404, "No existe la hoja de trabajo indicada.", "document_not_found");
+      sendJson(response, 200, { data: result });
+      return;
+    }
+    const result = route.action === "finalize"
+      ? await documentos.finalize(id, user)
+      : await documentos.update(id, await readJsonBody(request), user);
+    if (!result) throw new HttpError(404, "No existe la hoja de trabajo indicada.", "document_not_found");
+    sendJson(response, 200, { data: result });
+    return;
+  }
+
+  if (route.resource === "trabajos") {
+    if (route.action === "list" || route.action === "create") {
+      const documentId = validateUuid(route.documentId ?? "", "documento_corto_id");
+      const document = await documentos.getById(documentId);
+      if (!document) throw new HttpError(404, "No existe la hoja de trabajo indicada.", "document_not_found");
+      if (route.action === "list") {
+        sendJson(response, 200, { data: await trabajos.listByDocument(documentId) });
+        return;
+      }
+      sendJson(response, 201, { data: await trabajos.create(documentId, await readJsonBody(request), user) });
+      return;
+    }
+    const id = validateUuid(route.id ?? "", "trabajo_id");
+    const result = route.action === "finalize"
+      ? await trabajos.finalize(id, user)
+      : await trabajos.update(id, await readJsonBody(request), user);
+    if (!result) throw new HttpError(404, "No existe el trabajo indicado.", "work_not_found");
+    sendJson(response, 200, { data: result });
     return;
   }
 
@@ -180,6 +254,8 @@ export function createApp(
 ) {
   const clientes = dependencies.clientes ?? new ClientesModule();
   const unidades = dependencies.unidades ?? new UnidadesModule();
+  const documentos = dependencies.documentos ?? new DocumentosModule();
+  const trabajos = dependencies.trabajos ?? new TrabajosModule();
 
   return createServer(async (request, response) => {
     let url: URL;
@@ -235,7 +311,7 @@ export function createApp(
         sendJson(response, 404, { error: "Recurso no encontrado.", code: "not_found" });
         return;
       }
-      await dispatchBusinessRoute(route, url, request, response, authentication.user, clientes, unidades);
+      await dispatchBusinessRoute(route, url, request, response, authentication.user, clientes, unidades, documentos, trabajos);
     } catch (error) {
       jsonError(response, error);
     }
