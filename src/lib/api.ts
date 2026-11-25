@@ -17,6 +17,20 @@ export interface Cliente {
   actualizado_en: string;
 }
 
+export interface Unidad {
+  id: string;
+  cliente_id: string;
+  cliente_nombre: string;
+  numero_serie: string;
+  marca: string | null;
+  modelo: string | null;
+  anio: number | null;
+  placas: string | null;
+  activo: boolean;
+  creado_en: string;
+  actualizado_en: string;
+}
+
 export interface ApiPage<T> {
   data: T[];
   limit: number;
@@ -38,7 +52,7 @@ export class ApiError extends Error {
 
 async function responseError(
   response: Response,
-  options: { forbiddenMessage?: string } = {},
+  options: { forbiddenMessage?: string; notFoundMessage?: string } = {},
 ): Promise<ApiError> {
   let body: unknown = {};
   try {
@@ -56,7 +70,7 @@ async function responseError(
     400: serverMessage ?? "Revisa la información e inténtalo de nuevo.",
     401: "La sesión venció. Inicia sesión nuevamente.",
     403: options.forbiddenMessage ?? "No tienes permiso para realizar esta operación.",
-    404: "El cliente ya no existe o dejó de estar disponible.",
+    404: options.notFoundMessage ?? "El cliente ya no existe o dejó de estar disponible.",
     409: serverMessage ?? "El registro entra en conflicto con información existente.",
     422: serverMessage ?? "Revisa los campos marcados e inténtalo de nuevo.",
     502: "El backend no está disponible temporalmente. Inténtalo de nuevo.",
@@ -66,10 +80,118 @@ async function responseError(
   return new ApiError(messages[response.status] ?? "No se pudo completar la operación.", response.status, code);
 }
 
+export function getUnidades({
+  accessToken,
+  query,
+  clienteId,
+  limit,
+  offset,
+  signal,
+}: {
+  accessToken: string;
+  query: string;
+  clienteId: string;
+  limit: number;
+  offset: number;
+  signal?: AbortSignal;
+}): Promise<ApiPage<Unidad>> {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (query) params.set("q", query);
+  if (clienteId) params.set("cliente_id", clienteId);
+  return authenticatedGet<ApiPage<Unidad>>(`/unidades?${params.toString()}`, accessToken, {
+    signal,
+    forbiddenMessage: "Tu cuenta no tiene permiso para consultar unidades.",
+    notFoundMessage: "No se encontró el directorio solicitado.",
+  });
+}
+
+export interface CreateUnidadPayload {
+  cliente_id: string;
+  numero_serie: string;
+  numero_serie_confirmacion: string;
+  marca: string | null;
+  modelo: string | null;
+  anio: number | null;
+  placas: string | null;
+  activo: boolean;
+}
+
+export type UpdateUnidadPayload = Partial<Omit<CreateUnidadPayload, "cliente_id">>;
+
+async function writeUnidad<T extends Unidad>({
+  path,
+  method,
+  accessToken,
+  payload,
+  signal,
+}: {
+  path: string;
+  method: "POST" | "PATCH";
+  accessToken: string;
+  payload: CreateUnidadPayload | UpdateUnidadPayload;
+  signal?: AbortSignal;
+}): Promise<Unidad> {
+  let response: Response;
+  try {
+    response = await fetch(`/backend-api${path}`, {
+      method,
+      cache: "no-store",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal,
+    });
+  } catch {
+    throw new ApiError("No se pudo conectar con el backend. No fue posible confirmar los cambios; vuelve a cargar la unidad antes de reintentar.", 0);
+  }
+
+  if (!response.ok) {
+    throw await responseError(response, {
+      forbiddenMessage: method === "POST"
+        ? "Tu cuenta no tiene permiso para registrar unidades."
+        : "Tu cuenta no tiene permiso para editar unidades.",
+      notFoundMessage: "La unidad o el cliente ya no existe o dejó de estar disponible.",
+    });
+  }
+
+  try {
+    const result = await response.json() as { data?: T };
+    if (!result.data?.id) throw new Error("Missing unit");
+    return result.data;
+  } catch {
+    throw new ApiError("El backend respondió, pero no se pudieron confirmar los cambios de la unidad.", response.status);
+  }
+}
+
+export function createUnidad({
+  accessToken,
+  payload,
+  signal,
+}: {
+  accessToken: string;
+  payload: CreateUnidadPayload;
+  signal?: AbortSignal;
+}): Promise<Unidad> {
+  return writeUnidad({ path: "/unidades", method: "POST", accessToken, payload, signal });
+}
+
+export function updateUnidad({
+  accessToken,
+  unidadId,
+  payload,
+  signal,
+}: {
+  accessToken: string;
+  unidadId: string;
+  payload: UpdateUnidadPayload;
+  signal?: AbortSignal;
+}): Promise<Unidad> {
+  return writeUnidad({ path: `/unidades/${encodeURIComponent(unidadId)}`, method: "PATCH", accessToken, payload, signal });
+}
+
 async function authenticatedGet<T>(
   path: string,
   accessToken: string,
-  options: { forbiddenMessage?: string; signal?: AbortSignal } = {},
+  options: { forbiddenMessage?: string; notFoundMessage?: string; signal?: AbortSignal } = {},
 ): Promise<T> {
   let response: Response;
   try {
