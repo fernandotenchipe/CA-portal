@@ -4,7 +4,6 @@
 
 BEGIN;
 
--- Contexto requerido por los triggers de auditoría al cambiar permisos.
 SELECT set_config('app.actor_tipo', 'sistema', true);
 SELECT set_config('app.actor_id', '', true);
 
