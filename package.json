@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test:auth-callback": "node --experimental-strip-types src/app/auth/accept-invite/auth-callback.test.ts"
+    "test:auth-callback": "node --experimental-strip-types src/app/auth/accept-invite/auth-callback.test.ts",
+    "test:clientes-form": "node --experimental-strip-types src/lib/clientes-form.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.119.2",

@@ -118,6 +118,8 @@ a { color: inherit; text-decoration: none; }
 .client-status.is-active .status-dot { background: #54a47a; }
 .client-status.is-inactive { background: #f5f2ef; color: #887565; }
 .client-status.is-inactive .status-dot { background: #b79a7e; }
+.row-edit-button { cursor: pointer; font-size: 10px; min-height: 29px; padding: 0 9px; }
+.row-edit-button:disabled { cursor: not-allowed; opacity: .48; }
 .list-state-cell { padding: 48px 18px !important; text-align: center !important; }
 .table-loading { align-items: center; color: #748691; display: inline-flex; font-size: 12px; gap: 11px; }
 .table-loading .spinner { height: 20px; width: 20px; }
@@ -132,6 +134,41 @@ a { color: inherit; text-decoration: none; }
 .pagination-controls .button-secondary { cursor: pointer; font-size: 11px; min-height: 33px; }
 .pagination-controls .button-secondary:disabled { cursor: not-allowed; opacity: .45; }
 .page-number { color: #627581; font-size: 11px; min-width: 40px; text-align: center; }
+.success-callout { align-items: center; background: #eef8f1; border-color: #d1e8d7; color: #3d7652; margin: -11px 0 15px; }
+.success-callout svg { color: #4e9565; }
+.notice-dismiss { align-items: center; background: transparent; border: 0; color: #648b6d; cursor: pointer; display: inline-flex; margin-left: auto; padding: 3px; }
+.dialog-backdrop { align-items: center; background: rgba(12,28,39,.48); display: flex; inset: 0; justify-content: center; padding: 20px; position: fixed; z-index: 80; }
+.cliente-dialog { background: #fff; border: 1px solid rgba(224,232,236,.9); border-radius: 14px; box-shadow: 0 22px 70px rgba(10,29,42,.24); max-height: calc(100dvh - 40px); max-width: 720px; overflow-y: auto; width: 100%; }
+.cliente-dialog-header { align-items: flex-start; border-bottom: 1px solid #edf0f2; display: flex; justify-content: space-between; gap: 18px; padding: 22px 24px 18px; }
+.cliente-dialog-header .page-eyebrow { margin-bottom: 5px; }
+.cliente-dialog-header h2 { color: #223b4b; font-size: 20px; font-weight: 650; letter-spacing: -.025em; margin: 0; }
+.cliente-dialog-header p:last-child { color: #7a8a94; font-size: 11px; line-height: 1.55; margin: 6px 0 0; }
+.cliente-dialog-header .icon-button { flex: 0 0 auto; }
+.cliente-dialog form { padding: 19px 24px 0; }
+.cliente-form-fields { display: grid; gap: 15px 17px; grid-template-columns: repeat(2,minmax(0,1fr)); }
+.cliente-form-field { min-width: 0; }
+.cliente-form-field:first-child { grid-column: 1 / -1; }
+.cliente-form-field label { align-items: baseline; color: #405663; display: flex; font-size: 11px; font-weight: 650; justify-content: space-between; margin-bottom: 6px; }
+.field-requirement { color: #92a0a8; font-size: 9px; font-weight: 500; }
+.cliente-form-field input { background: #fff; border: 1px solid #dce4e9; border-radius: 7px; color: #304754; font-size: 12px; height: 39px; outline: none; padding: 0 10px; transition: border-color .15s ease, box-shadow .15s ease; width: 100%; }
+.cliente-form-field input:focus { border-color: #69a1bd; box-shadow: 0 0 0 3px rgba(49,129,169,.1); }
+.cliente-form-field input[aria-invalid="true"] { border-color: #c96d58; }
+.field-error { color: #a64e3c; display: block; font-size: 10px; line-height: 1.45; margin-top: 5px; }
+.cliente-active-control { align-items: center; align-self: end; display: flex; gap: 9px; min-height: 39px; padding: 2px 0; }
+.cliente-active-control input { accent-color: #297b59; height: 15px; width: 15px; }
+.cliente-active-control span { display: flex; flex-direction: column; gap: 2px; }
+.cliente-active-control strong { color: #405663; font-size: 11px; font-weight: 650; }
+.cliente-active-control em { font-style: normal; margin-left: 4px; }
+.cliente-active-control small { color: #87959d; font-size: 9px; }
+.form-error-banner { align-items: flex-start; background: #fff5f1; border: 1px solid #f1d6cc; border-radius: 8px; color: #9a533e; display: flex; font-size: 11px; gap: 9px; line-height: 1.5; margin-top: 17px; padding: 10px 12px; }
+.form-error-banner > svg { flex: 0 0 auto; margin-top: 1px; }
+.form-error-banner strong { color: #874a38; font-size: 11px; }
+.form-error-banner p { margin: 2px 0 0; }
+.form-error-banner .text-link { margin-top: 6px; }
+.cliente-dialog-footer { border-top: 1px solid #edf0f2; display: flex; gap: 9px; justify-content: flex-end; margin: 20px -24px 0; padding: 14px 24px 17px; }
+.cliente-dialog-footer button { cursor: pointer; }
+.cliente-dialog-footer button:disabled { cursor: wait; opacity: .65; }
+.button-spinner { animation: spin .9s linear infinite; border: 2px solid rgba(255,255,255,.42); border-radius: 50%; border-top-color: white; height: 13px; width: 13px; }
 .dashboard-welcome { background: linear-gradient(112deg, #123246 0%, #1c4960 67%, #2b6178 100%); border-radius: 13px; color: #fff; overflow: hidden; padding: 25px 28px; position: relative; }
 .dashboard-welcome::after { border: 1px solid rgba(255,255,255,.13); border-radius: 50%; content: ""; height: 280px; position: absolute; right: -35px; top: -115px; width: 280px; }
 .dashboard-welcome::before { border: 1px solid rgba(255,255,255,.1); border-radius: 50%; content: ""; height: 210px; position: absolute; right: 6px; top: -80px; width: 210px; }
@@ -228,6 +265,7 @@ a { color: inherit; text-decoration: none; }
   .login-decoration { margin-top: 18px; }
   .login-foot { display: none; }
   .login-form-side { padding: 34px 22px 44px; }
+  .cliente-dialog { max-width: 620px; }
 }
 @media (max-width: 430px) {
   .dashboard-grid { grid-template-columns: 1fr 1fr; }
@@ -236,4 +274,12 @@ a { color: inherit; text-decoration: none; }
   .search-field { max-width: none; }
   .login-brand-panel { min-height: 220px; }
   .login-story h1 { font-size: 29px; }
+  .dialog-backdrop { align-items: flex-start; padding: 8px; }
+  .cliente-dialog { border-radius: 11px; max-height: calc(100dvh - 16px); }
+  .cliente-dialog-header { padding: 17px 16px 14px; }
+  .cliente-dialog form { padding: 15px 16px 0; }
+  .cliente-form-fields { grid-template-columns: 1fr; }
+  .cliente-form-field:first-child { grid-column: auto; }
+  .cliente-active-control { align-self: auto; }
+  .cliente-dialog-footer { margin-left: -16px; margin-right: -16px; padding-left: 16px; padding-right: 16px; }
 }

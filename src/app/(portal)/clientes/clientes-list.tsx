@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { EmptyState } from "@/components/ui";
+import { EmptyState, PageHeading } from "@/components/ui";
 import { usePortalAuth } from "@/components/portal-auth";
 import { ApiError, getClientes, type ApiPage, type Cliente } from "@/lib/api";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { Icon } from "@/components/icon";
+import { ClienteForm } from "@/components/cliente-form";
+import { canCreateCliente, canEditCliente } from "@/lib/clientes-form";
 
 const pageSize = 20;
 
@@ -24,7 +26,7 @@ function asApiError(error: unknown): ApiError {
 
 export function ClientesList() {
   const router = useRouter();
-  const { signOut } = usePortalAuth();
+  const { state: authState, signOut } = usePortalAuth();
   const [queryInput, setQueryInput] = useState("");
   const [query, setQuery] = useState("");
   const [pageIndex, setPageIndex] = useState(0);
@@ -32,6 +34,12 @@ export function ClientesList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingCliente, setEditingCliente] = useState<Cliente | null>(null);
+  const [successNotice, setSuccessNotice] = useState<string | null>(null);
+
+  const canCreate = authState.status === "authenticated" && canCreateCliente(authState.profile.permisos);
+  const canEdit = authState.status === "authenticated" && canEditCliente(authState.profile.permisos);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -105,8 +113,29 @@ export function ClientesList() {
     router.replace("/login");
   }
 
+  function handleSaved(cliente: Cliente) {
+    const wasEditing = editingCliente !== null;
+    setFormOpen(false);
+    setEditingCliente(null);
+    setSuccessNotice(wasEditing
+      ? `Se actualizaron los datos de “${cliente.nombre}”.`
+      : `Se registró “${cliente.nombre}” correctamente.`);
+    setQueryInput("");
+    setQuery("");
+    setPageIndex(0);
+    setResult(null);
+    setRetryCount((count) => count + 1);
+  }
+
   return (
     <>
+      <PageHeading
+        action={<button className="button-primary" disabled={!canCreate} onClick={() => { setEditingCliente(null); setSuccessNotice(null); setFormOpen(true); }} title={canCreate ? "Registrar un cliente" : "Tu cuenta no tiene permiso para registrar clientes"}><span aria-hidden="true">＋</span>Nuevo cliente</button>}
+        description="Consulta y organiza la información de las personas y empresas atendidas por el taller."
+        eyebrow="Directorio"
+        title="Clientes"
+      />
+      {successNotice && <div className="callout success-callout" role="status"><Icon name="check" size={16} /><span>{successNotice}</span><button aria-label="Cerrar confirmación" className="notice-dismiss" onClick={() => setSuccessNotice(null)} type="button"><Icon name="close" size={15} /></button></div>}
       <div className="toolbar-row">
         <label className="search-field">
           <Icon name="search" size={16} />
@@ -140,14 +169,15 @@ export function ClientesList() {
                 <th scope="col">Correo</th>
                 <th scope="col">Estado</th>
                 <th scope="col">Registro</th>
+                <th scope="col">Acciones</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td className="list-state-cell" colSpan={6}><span aria-label="Cargando clientes" className="table-loading"><i className="spinner" />Cargando clientes…</span></td></tr>
+                <tr><td className="list-state-cell" colSpan={7}><span aria-label="Cargando clientes" className="table-loading"><i className="spinner" />Cargando clientes…</span></td></tr>
               ) : error ? (
                 <tr>
-                  <td className="list-state-cell" colSpan={6}>
+                  <td className="list-state-cell" colSpan={7}>
                     <div className="list-error" role="alert">
                       <span className="empty-icon"><Icon name={error.status === 401 || error.status === 403 ? "shield" : "activity"} size={21} /></span>
                       <strong>{error.status === 401 ? "Sesión no disponible" : error.status === 403 ? "Acceso denegado" : "No se pudo cargar el listado"}</strong>
@@ -167,11 +197,12 @@ export function ClientesList() {
                     <td>{cliente.correo || <span className="muted-value">—</span>}</td>
                     <td><span className={`status-pill client-status ${cliente.activo ? "is-active" : "is-inactive"}`}><i className="status-dot" />{cliente.activo ? "Activo" : "Inactivo"}</span></td>
                     <td>{readableDate(cliente.creado_en)}</td>
+                    <td><button aria-label={`Editar ${cliente.nombre}`} className="button-secondary row-edit-button" disabled={!canEdit} onClick={() => { setEditingCliente(cliente); setSuccessNotice(null); setFormOpen(true); }} title={canEdit ? `Editar ${cliente.nombre}` : "Tu cuenta no tiene permiso para editar clientes"} type="button">Editar</button></td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td className="empty-cell" colSpan={6}>
+                  <td className="empty-cell" colSpan={7}>
                     <EmptyState
                       icon="users"
                       title={query ? "No encontramos clientes" : "Aún no hay clientes registrados"}
@@ -195,6 +226,7 @@ export function ClientesList() {
           </nav>
         )}
       </section>
+      {formOpen && <ClienteForm key={editingCliente?.id ?? "nuevo"} cliente={editingCliente ?? undefined} mode={editingCliente ? "edit" : "create"} onCancel={() => setFormOpen(false)} onSaved={handleSaved} />}
     </>
   );
 }
