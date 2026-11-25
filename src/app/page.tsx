@@ -1,7 +1,5 @@
-export default function Home() {
-  return (
-    <main className="flex min-h-screen items-center justify-center p-8">
-      <h1 className="text-xl font-medium">Carrocerías Aguirre</h1>
-    </main>
-  );
+import { redirect } from "next/navigation";
+
+export default function HomePage() {
+  redirect("/dashboard");
 }
