@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "npm run build && node --test",
     "start": "node --env-file-if-exists=.env dist/server.js",
-    "db:check": "node --env-file-if-exists=.env dist/scripts/check-db.js"
+    "db:check": "node --env-file-if-exists=.env dist/scripts/check-db.js",
+    "auth:smoke": "node --env-file-if-exists=.env scripts/auth-smoke.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.86.0",
