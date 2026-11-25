@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { ApiError, createUnidad, getUnidades, updateUnidad, type Unidad } from "./api.ts";
+import { ApiError, createUnidad, getClientes, getUnidades, updateUnidad, type Unidad } from "./api.ts";
 import { canConsultUnidades, canCreateUnidad, canEditUnidad, createSubmissionGuard, emptyUnidadDraft, mapUnidadError, normalizeSerial, preventSerialPaste, preventSerialPasteShortcut, toCreateUnidadPayload, toUpdateUnidadPayload, unidadToDraft, validateUnidadDraft } from "./unidades-form.ts";
 
 const originalFetch = globalThis.fetch;
@@ -86,6 +86,16 @@ test("listado envía búsqueda, cliente, paginación y bearer por el proxy exist
   assert.equal(params.get("limit"), "20");
   assert.equal(params.get("offset"), "20");
   assert.equal((captured.init?.headers as Record<string, string>).Authorization, "Bearer test-token");
+});
+
+test("búsqueda del selector de cliente consulta registros reales por nombre o RFC", async () => {
+  let requestedUrl = "";
+  globalThis.fetch = async (input) => {
+    requestedUrl = String(input);
+    return Response.json({ data: [], limit: 100, offset: 0, total: 0 });
+  };
+  await getClientes({ accessToken: "test-token", query: "Taller Norte", limit: 100, offset: 0 });
+  assert.equal(new URL(requestedUrl, "http://localhost").searchParams.get("q"), "Taller Norte");
 });
 
 test("create y patch usan métodos y rutas correctos con payload permitido", async () => {

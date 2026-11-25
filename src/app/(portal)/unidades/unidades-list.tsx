@@ -34,6 +34,8 @@ export function UnidadesList() {
   const [queryInput, setQueryInput] = useState("");
   const [query, setQuery] = useState("");
   const [clienteId, setClienteId] = useState("");
+  const [clienteLookupInput, setClienteLookupInput] = useState("");
+  const [clienteLookup, setClienteLookup] = useState("");
   const [pageIndex, setPageIndex] = useState(0);
   const [result, setResult] = useState<ApiPage<Unidad> | null>(null);
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -50,6 +52,11 @@ export function UnidadesList() {
     const timer = window.setTimeout(() => { setQuery(queryInput.trim()); setPageIndex(0); }, 300);
     return () => window.clearTimeout(timer);
   }, [queryInput]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setClienteLookup(clienteLookupInput.trim()), 250);
+    return () => window.clearTimeout(timer);
+  }, [clienteLookupInput]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -84,14 +91,18 @@ export function UnidadesList() {
       setLoadingClientes(true); setClienteError(null);
       try {
         const { accessToken } = await sessionToken();
-        const page = await getClientes({ accessToken, query: "", limit: 100, offset: 0, signal: controller.signal });
-        if (active) setClientes(page.data.filter((cliente) => cliente.activo));
+        const page = await getClientes({ accessToken, query: clienteLookup, limit: 100, offset: 0, signal: controller.signal });
+        if (active) setClientes((current) => {
+          const matches = page.data.filter((cliente) => cliente.activo);
+          const selected = current.find((cliente) => cliente.id === clienteId);
+          return selected && !matches.some((cliente) => cliente.id === selected.id) ? [selected, ...matches] : matches;
+        });
       } catch (requestError) { if (active && !controller.signal.aborted) setClienteError(asApiError(requestError)); }
       finally { if (active) setLoadingClientes(false); }
     }
     void loadClientes();
     return () => { active = false; controller.abort(); };
-  }, [retryCount]);
+  }, [retryCount, clienteLookup, clienteId]);
 
   const totalPages = result ? Math.ceil(result.total / pageSize) : 0;
   const firstVisible = result?.data.length ? result.offset + 1 : 0;
@@ -114,7 +125,7 @@ export function UnidadesList() {
   return <>
     <div className="page-heading"><div><p className="page-eyebrow">Directorio</p><h1 className="page-title">Unidades</h1><p className="page-subtitle">Consulta los camiones registrados y su relación con los clientes atendidos por el taller.</p></div><button className="button-primary" disabled={!canCreate} onClick={() => { setEditing(null); setSuccessNotice(null); setFormOpen(true); }} title={canCreate ? "Registrar una unidad" : "Tu cuenta no tiene permiso para registrar unidades"} type="button"><Icon name="plus" size={16} />Nueva unidad</button></div>
     {successNotice && <div className="callout success-callout" role="status"><Icon name="check" size={16} /><span>{successNotice}</span><button aria-label="Cerrar confirmación" className="notice-dismiss" onClick={() => setSuccessNotice(null)} type="button"><Icon name="close" size={15} /></button></div>}
-    <div className="toolbar-row units-toolbar"><label className="search-field"><Icon name="search" size={16} /><input aria-label="Buscar unidad por número de serie" onChange={(event) => setQueryInput(event.currentTarget.value)} placeholder="Buscar por serie, marca, modelo o placas" type="search" value={queryInput} /></label><label className="units-filter"><Icon name="filter" size={16} /><span>Cliente</span><select aria-label="Filtrar por cliente" disabled={loadingClientes || Boolean(clienteError)} onChange={(event) => { setClienteId(event.currentTarget.value); setPageIndex(0); }} value={clienteId}><option value="">{loadingClientes ? "Cargando…" : "Todos los clientes"}</option>{clientes.map((cliente) => <option key={cliente.id} value={cliente.id}>{cliente.nombre}</option>)}</select></label><p className="list-hint">La búsqueda usa los campos descriptivos disponibles en la API.</p></div>
+    <div className="toolbar-row units-toolbar"><label className="search-field"><Icon name="search" size={16} /><input aria-label="Buscar unidad por número de serie" onChange={(event) => setQueryInput(event.currentTarget.value)} placeholder="Buscar por serie, marca, modelo o placas" type="search" value={queryInput} /></label><label className="units-filter"><Icon name="filter" size={16} /><span>Cliente</span><input aria-label="Buscar cliente para filtrar" onChange={(event) => setClienteLookupInput(event.currentTarget.value)} placeholder="Nombre o RFC" type="search" value={clienteLookupInput} /><select aria-label="Filtrar por cliente" disabled={loadingClientes || Boolean(clienteError)} onChange={(event) => { setClienteId(event.currentTarget.value); setPageIndex(0); }} value={clienteId}><option value="">{loadingClientes ? "Cargando…" : "Todos los clientes"}</option>{clientes.map((cliente) => <option key={cliente.id} value={cliente.id}>{cliente.nombre}</option>)}</select></label><p className="list-hint">La búsqueda usa los campos descriptivos disponibles en la API.</p></div>
     <section aria-labelledby="unidades-list-title" className="panel">
       <div className="panel-header"><div><h2 id="unidades-list-title">Directorio de unidades</h2><p>Consulta actualizada desde el sistema</p></div><span className="status-pill" aria-live="polite"><i className="status-dot" />{loading ? "Cargando" : result ? `${result.total} ${result.total === 1 ? "unidad" : "unidades"}` : "Sin datos"}</span></div>
       {clienteError && <div className="list-error-panel" role="alert"><p>No se pudo cargar la lista de clientes para el filtro. {clienteError.message}</p><button className="button-secondary" onClick={() => void retry()} type="button">Reintentar</button></div>}
