@@ -9,7 +9,7 @@ import { Icon, type IconName } from "@/components/icon";
 const navigation: { label: string; items: { href: string; label: string; icon: IconName }[] }[] = [
   { label: "General", items: [{ href: "/dashboard", label: "Panel principal", icon: "home" }] },
   { label: "Directorio", items: [{ href: "/clientes", label: "Clientes", icon: "users" }, { href: "/unidades", label: "Unidades", icon: "truck" }] },
-  { label: "Operación", items: [{ href: "/hojas", label: "Hojas de trabajo", icon: "clipboard" }, { href: "/fabricacion", label: "Órdenes de fabricación", icon: "factory" }] },
+  { label: "Operación", items: [{ href: "/hojas-de-trabajo", label: "Hojas de trabajo", icon: "clipboard" }, { href: "/fabricacion", label: "Órdenes de fabricación", icon: "factory" }] },
   { label: "Sistema", items: [{ href: "/notificaciones", label: "Notificaciones", icon: "bell" }] },
 ];
 

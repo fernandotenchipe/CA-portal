@@ -84,6 +84,6 @@ Las mutaciones utilizan `withActorTransaction`. Los triggers ya existentes hacen
 
 ## Estado de permisos y esquema
 
-Permisos preparados (requieren aprobación y asignación externa): `documentos_cortos.consultar`, `documentos_cortos.crear`, `documentos_cortos.editar`, `trabajos.consultar`, `trabajos.crear`, `trabajos.editar`. Las operaciones de finalización usan el permiso `editar` conforme a las reglas de integridad documentadas. No hay matriz asignada para este módulo.
+El propietario confirmó que la matriz fue aplicada en Supabase: las seis claves (`documentos_cortos.consultar`, `documentos_cortos.crear`, `documentos_cortos.editar`, `trabajos.consultar`, `trabajos.crear`, `trabajos.editar`) tienen 18 asignaciones para ADMINISTRACION, VENTAS y LOGISTICA. Esta tarea no consultó ni modificó Supabase. Las operaciones de finalización usan el permiso `editar` conforme a las reglas de integridad documentadas.
 
-El contrato se basa en las seis migraciones y los dos parches versionados en el repositorio. La consulta directa del esquema vivo de Supabase no se hizo porque esta tarea prohíbe ejecutar SQL allí; esa instancia debe verificarse en una tarea autorizada antes de habilitar tráfico productivo.
+El contrato se basa en las seis migraciones y los dos parches versionados en el repositorio. El usuario confirmó que el esquema y permisos vivos corresponden a este contrato; no se ejecutaron consultas SQL en Supabase durante esta tarea.

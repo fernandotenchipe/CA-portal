@@ -31,6 +31,41 @@ export interface Unidad {
   actualizado_en: string;
 }
 
+export type EstadoTrabajo = "en_construccion" | "finalizado";
+
+export interface DocumentoCorto {
+  id: string;
+  folio_fisico: string;
+  folio_fisico_normalizado: string;
+  unidad_id: string;
+  cliente_id: string;
+  cliente_nombre: string;
+  numero_serie: string;
+  estado_trabajo: EstadoTrabajo;
+  finalizado_en: string | null;
+  observaciones: string | null;
+  fecha_documento: string | null;
+  creado_en: string;
+  actualizado_en: string;
+  cancelado_en: string | null;
+}
+
+export interface Trabajo {
+  id: string;
+  documento_corto_id: string;
+  numero_orden: number;
+  descripcion: string;
+  estado: EstadoTrabajo;
+  finalizado_en: string | null;
+  cantidad: string | null;
+  unidad_medida: string | null;
+  precio_unitario: string | null;
+  importe: string | null;
+  observaciones: string | null;
+  creado_en: string;
+  actualizado_en: string;
+}
+
 export interface ApiPage<T> {
   data: T[];
   limit: number;
@@ -246,6 +281,28 @@ export function getClientes({
   return authenticatedGet<ApiPage<Cliente>>(`/clientes?${params.toString()}`, accessToken, { signal });
 }
 
+export async function getAllClientes({ accessToken, signal }: { accessToken: string; signal?: AbortSignal }): Promise<Cliente[]> {
+  const first = await getClientes({ accessToken, query: "", limit: 100, offset: 0, signal });
+  const rows = [...first.data];
+  while (rows.length < first.total) {
+    const next = await getClientes({ accessToken, query: "", limit: 100, offset: rows.length, signal });
+    if (!next.data.length) break;
+    rows.push(...next.data);
+  }
+  return rows;
+}
+
+export async function getAllUnidadesForCliente({ accessToken, clienteId, signal }: { accessToken: string; clienteId: string; signal?: AbortSignal }): Promise<Unidad[]> {
+  const first = await getUnidades({ accessToken, query: "", clienteId, limit: 100, offset: 0, signal });
+  const rows = [...first.data];
+  while (rows.length < first.total) {
+    const next = await getUnidades({ accessToken, query: "", clienteId, limit: 100, offset: rows.length, signal });
+    if (!next.data.length) break;
+    rows.push(...next.data);
+  }
+  return rows;
+}
+
 export interface CreateClientePayload {
   nombre: string;
   razon_social: string | null;
@@ -343,4 +400,119 @@ export async function updateCliente({
   } catch {
     throw new ApiError("El backend respondió, pero no se pudieron confirmar los cambios.", response.status);
   }
+}
+
+export interface DocumentoFilters {
+  q?: string;
+  folioFisico?: string;
+  clienteId?: string;
+  unidadId?: string;
+  estado?: EstadoTrabajo | "";
+  cancelada?: boolean | "";
+  limit: number;
+  offset: number;
+  signal?: AbortSignal;
+}
+
+export interface CreateDocumentoPayload {
+  folio_fisico: string;
+  unidad_id: string;
+  cliente_id: string;
+  observaciones: string | null;
+  fecha_documento: string | null;
+}
+
+export type UpdateDocumentoPayload = Partial<Omit<CreateDocumentoPayload, "cliente_id">> & { cliente_id?: string };
+
+export interface TrabajoPayload {
+  descripcion: string;
+  cantidad: number | null;
+  unidad_medida: string | null;
+  precio_unitario: number | null;
+  observaciones: string | null;
+}
+
+export function getDocumentosCortos({ accessToken, ...filters }: { accessToken: string } & DocumentoFilters): Promise<ApiPage<DocumentoCorto>> {
+  const params = new URLSearchParams({ limit: String(filters.limit), offset: String(filters.offset) });
+  if (filters.q) params.set("q", filters.q);
+  if (filters.folioFisico) params.set("folio_fisico", filters.folioFisico);
+  if (filters.clienteId) params.set("cliente_id", filters.clienteId);
+  if (filters.unidadId) params.set("unidad_id", filters.unidadId);
+  if (filters.estado) params.set("estado_trabajo", filters.estado);
+  if (filters.cancelada !== undefined && filters.cancelada !== "") params.set("cancelada", String(filters.cancelada));
+  return authenticatedGet<ApiPage<DocumentoCorto>>(`/documentos-cortos?${params}`, accessToken, {
+    signal: filters.signal,
+    forbiddenMessage: "Tu cuenta no tiene permiso para consultar hojas de trabajo.",
+    notFoundMessage: "No se encontró el listado de hojas de trabajo.",
+  });
+}
+
+export async function getDocumentoCorto({ accessToken, documentoId, signal }: { accessToken: string; documentoId: string; signal?: AbortSignal }): Promise<DocumentoCorto> {
+  const result = await authenticatedGet<{ data?: DocumentoCorto }>(`/documentos-cortos/${encodeURIComponent(documentoId)}`, accessToken, {
+    signal, forbiddenMessage: "Tu cuenta no tiene permiso para consultar hojas de trabajo.", notFoundMessage: "La hoja ya no existe o dejó de estar disponible.",
+  });
+  if (!result.data?.id) throw new ApiError("El backend devolvió una hoja que no se pudo leer.", 502);
+  return result.data;
+}
+
+async function writePortal<T>({ path, method, accessToken, payload, permission, signal }: {
+  path: string; method: "POST" | "PATCH"; accessToken: string; payload?: unknown; permission: string; signal?: AbortSignal;
+}): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`/backend-api${path}`, {
+      method, cache: "no-store", headers: { Authorization: `Bearer ${accessToken}`, ...(payload === undefined ? {} : { "Content-Type": "application/json" }) },
+      ...(payload === undefined ? {} : { body: JSON.stringify(payload) }), signal,
+    });
+  } catch {
+    throw new ApiError("No se pudo conectar con el backend. No fue posible confirmar los cambios; vuelve a cargar la información antes de reintentar.", 0);
+  }
+  if (!response.ok) throw await responseError(response, { forbiddenMessage: `Tu cuenta no tiene permiso para ${permission}.`, notFoundMessage: "La hoja o el trabajo ya no existe o dejó de estar disponible." });
+  if (response.status === 204) return undefined as T;
+  try { return await response.json() as T; }
+  catch { throw new ApiError("El backend respondió, pero no se pudo leer el resultado.", response.status); }
+}
+
+export async function createDocumentoCorto({ accessToken, payload }: { accessToken: string; payload: CreateDocumentoPayload }): Promise<DocumentoCorto> {
+  const result = await writePortal<{ data?: DocumentoCorto }>({ path: "/documentos-cortos", method: "POST", accessToken, payload, permission: "registrar hojas" });
+  if (!result.data?.id) throw new ApiError("No se pudo confirmar el registro de la hoja.", 502);
+  return result.data;
+}
+
+export async function updateDocumentoCorto({ accessToken, documentoId, payload }: { accessToken: string; documentoId: string; payload: UpdateDocumentoPayload }): Promise<DocumentoCorto> {
+  const result = await writePortal<{ data?: DocumentoCorto }>({ path: `/documentos-cortos/${encodeURIComponent(documentoId)}`, method: "PATCH", accessToken, payload, permission: "editar hojas" });
+  if (!result.data?.id) throw new ApiError("No se pudo confirmar la actualización de la hoja.", 502);
+  return result.data;
+}
+
+export async function finalizeDocumentoCorto({ accessToken, documentoId }: { accessToken: string; documentoId: string }): Promise<DocumentoCorto> {
+  const result = await writePortal<{ data?: DocumentoCorto }>({ path: `/documentos-cortos/${encodeURIComponent(documentoId)}/finalizar`, method: "POST", accessToken, permission: "finalizar hojas" });
+  if (!result.data?.id) throw new ApiError("No se pudo confirmar la finalización de la hoja.", 502);
+  return result.data;
+}
+
+export async function getTrabajos({ accessToken, documentoId, signal }: { accessToken: string; documentoId: string; signal?: AbortSignal }): Promise<Trabajo[]> {
+  const result = await authenticatedGet<{ data?: Trabajo[] }>(`/documentos-cortos/${encodeURIComponent(documentoId)}/trabajos`, accessToken, {
+    signal, forbiddenMessage: "Tu cuenta no tiene permiso para consultar los trabajos.", notFoundMessage: "La hoja ya no existe o dejó de estar disponible.",
+  });
+  if (!Array.isArray(result.data)) throw new ApiError("El backend devolvió una lista de trabajos que no se pudo leer.", 502);
+  return result.data;
+}
+
+export async function createTrabajo({ accessToken, documentoId, payload }: { accessToken: string; documentoId: string; payload: TrabajoPayload }): Promise<Trabajo> {
+  const result = await writePortal<{ data?: Trabajo }>({ path: `/documentos-cortos/${encodeURIComponent(documentoId)}/trabajos`, method: "POST", accessToken, payload, permission: "agregar trabajos" });
+  if (!result.data?.id) throw new ApiError("No se pudo confirmar el trabajo agregado.", 502);
+  return result.data;
+}
+
+export async function updateTrabajo({ accessToken, trabajoId, payload }: { accessToken: string; trabajoId: string; payload: Partial<TrabajoPayload> }): Promise<Trabajo> {
+  const result = await writePortal<{ data?: Trabajo }>({ path: `/trabajos/${encodeURIComponent(trabajoId)}`, method: "PATCH", accessToken, payload, permission: "editar trabajos" });
+  if (!result.data?.id) throw new ApiError("No se pudo confirmar la actualización del trabajo.", 502);
+  return result.data;
+}
+
+export async function finalizeTrabajo({ accessToken, trabajoId }: { accessToken: string; trabajoId: string }): Promise<Trabajo> {
+  const result = await writePortal<{ data?: Trabajo }>({ path: `/trabajos/${encodeURIComponent(trabajoId)}/finalizar`, method: "POST", accessToken, permission: "finalizar trabajos" });
+  if (!result.data?.id) throw new ApiError("No se pudo confirmar la finalización del trabajo.", 502);
+  return result.data;
 }
